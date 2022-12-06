@@ -1,0 +1,134 @@
+---
+title: "NYPD Shooting Incident Data Report"
+date: "2022-12-04"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Step 1 - Identify and import the data
+
+We start by reading the "tidyverse" library and read data from the csv file.
+
+```{r get_shooting_data}
+library(tidyverse)
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+```
+
+Let's read in the data and see what we have.
+
+```{r import_data, message = FALSE}
+NYPD <- read_csv(url)
+NYPD
+```
+
+## Step 2 - Tidy and Transform Your Data
+
+After looking at the shooting data, we would like to tidy this data set.
+We only need OCCUR_DATE, BORO, PERP_AGE_GROUP, PERP_SEX, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE for the analysis I am planning.
+
+```{r tidy_shooting_data}
+NYPD <- NYPD %>%
+  select(c(OCCUR_DATE, BORO, PERP_AGE_GROUP, PERP_SEX, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE))
+NYPD
+```
+
+We will also read the "lubridate" library and change OCCUR_Date to date format.
+
+```{r change_date_type}
+library(lubridate)
+NYPD <- NYPD %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+NYPD
+```
+
+Here, we are running summary command to view a summary of our columns.
+
+```{r summary}
+summary(NYPD)
+```
+
+## Step 3 - Add Visualizations and Analysis
+
+We will first group our data by BORO to see for each BORO, numbers of perpetrators and victims.
+
+```{r count victim numbers by BORO}
+NYPD_by_boro <- NYPD %>%
+  group_by(BORO) %>%
+  summarize(perp_num = sum(!is.na(PERP_AGE_GROUP)), vic_num = n()) %>%
+  ungroup()
+NYPD_by_boro
+```
+
+Now, let's plot by bar chat. Red bars show victims with perpetrators and grey bars show victims without perpetrators.
+Here we see in our 5 boros, Brooklyn has the most number of victims. It also has the most numbers of victim without finding perpetrators. 
+
+```{r 1st plot}
+NYPD_by_boro %>%
+  ggplot(aes(x = BORO)) +
+  geom_bar(aes(y = vic_num), stat='identity') +
+  geom_bar(aes(y = perp_num), stat='identity', fill = "red") +
+  labs(title = str_c("Victim and Perp Numbers by Boro"), y = NULL)
+```
+
+Secondly, we would like to see for Brooklyn only, the trends of perpetrator numbers and victim numbers by year.
+
+```{r count victim numbers by year for Brookly only}
+NYPD_by_year_Brooklyn <- NYPD %>% 
+  filter(BORO == "BROOKLYN") %>%
+  mutate(Year = year(OCCUR_DATE)) %>%
+  group_by(Year) %>%
+  summarize(perp_num = sum(!is.na(PERP_AGE_GROUP)), vic_num = n()) %>%
+  ungroup()
+NYPD_by_year_Brooklyn
+```
+
+And we will plot our second graph. 
+Number of victims are higher from 2006 to 2011, getting lower in the following years and return to peak on 2020.
+Number of perpetrators are almost following the same trends, and for 2020, there are lots of victims without perpetrators comparing to other years.
+
+```{r 2nd plot}
+NYPD_by_year_Brooklyn %>%
+  ggplot(aes(x = Year, y = perp_num)) +
+  geom_line(aes(color = "perp_num")) +
+  geom_point(aes(color = "perp_num")) +
+  geom_line(aes(y = vic_num, color = "vic_num")) +
+  geom_point(aes(y = vic_num, color = "vic_num")) +
+  labs(title = str_c("Victim and Perp Numbers by Year for Brooklyn"), y = NULL)
+```
+
+We could model our data for perp numbers vs victim numbers. It shows 2017 had the least number of victims and 2006 had the most.
+
+```{r modeling data}
+mod <- lm(perp_num ~ vic_num, data = NYPD_by_year_Brooklyn)
+summary(mod)
+NYPD_by_year_Brooklyn %>% slice_min(vic_num)
+NYPD_by_year_Brooklyn %>% slice_max(vic_num)
+```
+
+We can predict number of perpetrator by using our model.
+
+```{r predict}
+NYPD_by_year_Brooklyn_pred <- NYPD_by_year_Brooklyn %>% mutate(pred = predict(mod))
+NYPD_by_year_Brooklyn_pred
+```
+
+And comparing with the actual number of perpetrator using plot comparison, blue dots are actual number of perp and red dots are estimated.
+
+```{r final plot}
+NYPD_by_year_Brooklyn_pred %>%
+  ggplot() +
+  geom_point(aes(x = vic_num, y = perp_num), color = "blue") +
+  geom_point(aes(x = vic_num, y = pred), color = "red") +
+  labs(title = str_c("Model to predict perp numbers"), y = NULL)
+```
+
+## Step 4 - Add Bias Identification
+
+Our model illustrates the actual number of preps are very close to the predicted number of preps. There is a positive connections between number of victims and number of perpetrators.
+
+The potential bias on my analysis would be the data accuracy on the data source. The analysis that I made was based on considering all NA in perp columns meaning the police didn't found perp for those victims, but it could possible those shooting cases are closed and perps are found, they just don't want to public the perp info because of privacy issue.
+
+```{r suammary}
+sessionInfo()
+```
